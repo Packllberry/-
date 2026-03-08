@@ -1,12 +1,13 @@
 import streamlit as st
 import urllib.parse
 import requests
-from deep_translator import GoogleTranslator  # 翻訳ライブラリをインポート
+from deep_translator import GoogleTranslator
+import random
 
 st.set_page_config(page_title="ブログ画像生成アプリ", layout="centered")
 
 st.title("🎨 日本語対応・画像生成アプリ")
-st.write("タイトルと概要を日本語で入力すると、自動で英語に翻訳して画像を生成します。")
+st.write("タイトルと概要を日本語で入力してください。")
 
 with st.form("input_form"):
     title = st.text_input("記事のタイトル", placeholder="例：ガンダムのプラモデル制作記")
@@ -21,44 +22,41 @@ if submit_button:
     else:
         with st.spinner("日本語を翻訳して、画像を生成中..."):
             try:
-                # --- 翻訳プロセス ---
-                # タイトルと概要を結合して英語に翻訳
+                # 1. 翻訳プロセス
                 full_text_jp = f"{title}, {description}"
                 translated_text = GoogleTranslator(source='auto', target='en').translate(full_text_jp)
+                st.write(f"🔍 AIへの指示（翻訳後）: {translated_text}")
+
+                # 2. 画像URLの構築（ランダム値を混ぜてキャッシュを回避）
+                seed = random.randint(0, 100000)
+                encoded_prompt = urllib.parse.quote(f"{translated_text}, {style}")
+                image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=512&height=512&nologo=true&model=flux&seed={seed}"
                 
-                # 翻訳結果を画面に表示（デバッグ用：不要なら消せます）
-                st.write(f"🔍 翻訳結果 (AIへの指示): {translated_text}")
+                # 3. 画像取得プロセス（リトライ機能付き）
+                success = False
+                for i in range(3):
+                    try:
+                        # タイムアウトを90秒に設定
+                        response = requests.get(image_url, timeout=90)
+                        if response.status_code == 200:
+                            st.image(response.content, caption="生成された画像")
+                            st.download_button(
+                                label="画像を保存",
+                                data=response.content,
+                                file_name="blog_image.png",
+                                mime="image/png"
+                            )
+                            success = True
+                            break
+                        else:
+                            st.write(f"⚠️ サーバー応答待ち... ({i+1}/3回目)")
+                    except Exception:
+                        st.write(f"⚠️ 通信リトライ中... ({i+1}/3回目)")
+                        continue
 
-                # --- 画像生成プロセス ---
-              # --- 画像生成プロセス（リトライ機能付き） ---
-# サイズを少し小さく(512x512)して、生成速度を優先させます
-image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=512&height=512&nologo=true&model=flux"
+                if not success:
+                    st.error("画像サーバーが非常に混み合っています。")
+                    st.info(f"直接リンクを確認してください: [こちらをクリック]({image_url})")
 
-success = False
-for i in range(3):  # 最大3回まで再試行する
-    try:
-        # timeoutをさらに延ばし、stream=Trueで少しずつデータを受け取る
-        response = requests.get(image_url, timeout=90) 
-        if response.status_code == 200:
-            st.image(response.content, caption="生成された画像")
-            
-            st.download_button(
-                label="画像を保存",
-                data=response.content,
-                file_name="blog_image.png",
-                mime="image/png"
-            )
-            success = True
-            break  # 成功したらループを抜ける
-    except requests.exceptions.RequestException:
-        st.write(f"⚠️ 通信リトライ中... ({i+1}/3回目)")
-        continue
-
-if not success:
-    st.error("画像サーバーが非常に混み合っています。数分時間を置いてから再度「生成」を押してください。")
-    # 代替案として、URLを表示して直接アクセスを促す
-    st.info("以下のリンクを直接クリックすると、画像が表示される場合があります：")
-    st.write(f"[直接リンクで確認する]({image_url})")
-                    
             except Exception as e:
-                st.error(f"エラーが発生しました: {e}")
+                st.error(f"システムエラーが発生しました: {e}")
