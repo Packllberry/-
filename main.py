@@ -30,24 +30,35 @@ if submit_button:
                 st.write(f"🔍 翻訳結果 (AIへの指示): {translated_text}")
 
                 # --- 画像生成プロセス ---
-                encoded_prompt = urllib.parse.quote(f"{translated_text}, {style}")
-                # 安定性を高めるため、model=flux を指定
-                image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=768&nologo=true&model=flux"
-                
-                # タイムアウトを長めに設定してリクエスト
-                response = requests.get(image_url, timeout=60)
-                
-                if response.status_code == 200:
-                    st.image(response.content, caption="生成された画像")
-                    
-                    st.download_button(
-                        label="画像を保存",
-                        data=response.content,
-                        file_name="blog_image.png",
-                        mime="image/png"
-                    )
-                else:
-                    st.error("画像サーバーの応答がありません。もう一度お試しください。")
+              # --- 画像生成プロセス（リトライ機能付き） ---
+# サイズを少し小さく(512x512)して、生成速度を優先させます
+image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=512&height=512&nologo=true&model=flux"
+
+success = False
+for i in range(3):  # 最大3回まで再試行する
+    try:
+        # timeoutをさらに延ばし、stream=Trueで少しずつデータを受け取る
+        response = requests.get(image_url, timeout=90) 
+        if response.status_code == 200:
+            st.image(response.content, caption="生成された画像")
+            
+            st.download_button(
+                label="画像を保存",
+                data=response.content,
+                file_name="blog_image.png",
+                mime="image/png"
+            )
+            success = True
+            break  # 成功したらループを抜ける
+    except requests.exceptions.RequestException:
+        st.write(f"⚠️ 通信リトライ中... ({i+1}/3回目)")
+        continue
+
+if not success:
+    st.error("画像サーバーが非常に混み合っています。数分時間を置いてから再度「生成」を押してください。")
+    # 代替案として、URLを表示して直接アクセスを促す
+    st.info("以下のリンクを直接クリックすると、画像が表示される場合があります：")
+    st.write(f"[直接リンクで確認する]({image_url})")
                     
             except Exception as e:
                 st.error(f"エラーが発生しました: {e}")
